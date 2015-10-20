@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<package>
+
+  <name>giraff_ros_driver</name>
+  <version>1.0.0</version>
+  <description>ROS driver for the Giraff telepresence robot</description>
+
+  <maintainer email="iperde@upo.es">Ignacio Perez-Hurtado</maintainer>
+  <license>BSD</license>
+  <url type="website">http://www.ros.org/wiki/giraff_ros_driver</url>
+
+  <author email="iperde@upo.es">Ignacio Perez-Hurtado</author>
+  <author email="noeperez@upo.es">Noe Perez-Higueras</author>    
+  <author email="fcaballero@us.es">Fernando Caballero</author> 
+  <author email="lmercab@upo.es">Luis Merino</author> 
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>nav_msgs</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>sensor_msgs</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>tf</build_depend>
+
+  <run_depend>nav_msgs</run_depend>
+  <run_depend>roscpp</run_depend>
+  <run_depend>sensor_msgs</run_depend>
+  <run_depend>std_msgs</run_depend>
+  <run_depend>tf</run_depend>
+
+  <export></export>
+
+</package>
