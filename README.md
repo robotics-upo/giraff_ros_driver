@@ -122,7 +122,7 @@ The next topics are published by the *giraff_teleop_joy*:
 In order to build the package, download it to the *src* directory of your Catkin workspace and compile it by using *catkin_make* as normal.
 
 
-## Parameters
+## ROS parameters
 
 Parameters of the *giraff_driver* program:
 
