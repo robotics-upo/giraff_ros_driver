@@ -8,6 +8,7 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   std_msgs
   tf
+  message_generation
 )
 
 find_package(Boost REQUIRED COMPONENTS system)
@@ -30,7 +31,7 @@ generate_messages(
 catkin_package(
  INCLUDE_DIRS include
  LIBRARIES giraff_ros_driver
- CATKIN_DEPENDS nav_msgs roscpp sensor_msgs std_msgs tf
+ CATKIN_DEPENDS nav_msgs roscpp sensor_msgs std_msgs tf message_runtime
  DEPENDS system_lib
 )
 
