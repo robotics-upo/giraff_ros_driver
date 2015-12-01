@@ -42,7 +42,9 @@ include_directories(
 )
 
 add_executable(giraff_node src/giraff_node.cpp)
+add_dependencies(giraff_node giraff_ros_driver_gencpp)
 add_executable(giraff_teleop_joy src/giraff_teleop_joy.cpp)
+add_dependencies(giraff_teleop_joy giraff_ros_driver_gencpp)
 
 target_link_libraries(giraff_node
    ${catkin_LIBRARIES}
