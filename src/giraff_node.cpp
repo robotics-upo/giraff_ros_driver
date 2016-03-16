@@ -36,7 +36,7 @@
 #include <giraff_ros_driver/avr_comms.h>
 #include <boost/bind.hpp>
 
-#define GIRAFF_RADIUS 0.235
+#define GIRAFF_DIAMETER 0.47
 
 #define NODE_VERSION 1.2
 #define FREQ	100.0
@@ -222,7 +222,8 @@ int main(int argc, char** argv)
 	int timeout;
 	pn.param<int>("giraff_pc_timeout", timeout, GIRAFF_PC_TIMEOUT);
 	
-	
+	bool using_imu;
+	pn.param<bool>("using_imu", using_imu, true);
 
 	double freq;
 	pn.param<double>("freq",freq,FREQ);
@@ -237,7 +238,10 @@ int main(int argc, char** argv)
 
 	ros::Publisher odom_pub = pn.advertise<nav_msgs::Odometry>(odom_frame_id, 5);
 	ros::Subscriber cmd_vel_sub = n.subscribe<geometry_msgs::Twist>("/cmd_vel",1,cmdVelReceived);
-	ros::Subscriber imu_sub = n.subscribe<sensor_msgs::Imu>("/imu/data",1,imuReceived);	
+	ros::Subscriber imu_sub;
+	if (using_imu) {
+		imu_sub = n.subscribe<sensor_msgs::Imu>("/imu/data",1,imuReceived);	
+	}	
 	ros::Subscriber stalk_sub=n.subscribe<giraff_ros_driver::Stalk>("/stalk",1,stalkReceived);
 	ros::Subscriber stalk_ref_sub =
                 n.subscribe<giraff_ros_driver::StalkRef>("/stalk_ref",1,boost::bind(&stalkRefReceived,_1, giraff, tilt_bias));
@@ -247,7 +251,9 @@ int main(int argc, char** argv)
 	ros::Publisher batteries_pub = pn.advertise<giraff_ros_driver::batteries>("/batteries",5);
 	cmd_vel_avr_pub_ptr = &cmd_vel_avr_pub;
 	ros::Time current_time,last_time;
-	imu_time = ros::Time::now();
+	if (using_imu) {
+		imu_time = ros::Time::now();
+	}
 	last_time = ros::Time::now();
 	cmd_vel_time = ros::Time::now();
 	ros::Rate r(freq);
@@ -260,15 +266,17 @@ int main(int argc, char** argv)
 	bool first_time=true;
 	float giraff_battery_level;	
 	while (n.ok()) {
-		current_time = ros::Time::now();		
-		double imu_sec = (current_time - imu_time).toSec();
-		if(imu_sec >= 0.25){
-			giraff->setVelocity(0,0);
-			ang_vel = 0;
-			imu_error = true;
-			ROS_WARN("-_-_-_-_-_- IMU STOP -_-_-_-_-_- imu_sec=%.3f sec",imu_sec);
-		} else {
-			imu_error = false;
+		current_time = ros::Time::now();
+		if (using_imu) {		
+			double imu_sec = (current_time - imu_time).toSec();
+			if(imu_sec >= 0.25){
+				giraff->setVelocity(0,0);
+				ang_vel = 0;
+				imu_error = true;
+				ROS_WARN("-_-_-_-_-_- IMU STOP -_-_-_-_-_- imu_sec=%.3f sec",imu_sec);
+			} else {
+				imu_error = false;
+			}
 		}
 		double cmd_vel_sec = (current_time - cmd_vel_time).toSec();
 		if (cmd_vel_sec >= 0.5) {
@@ -277,6 +285,14 @@ int main(int argc, char** argv)
 
 		giraff->getIMD(imdl,imdr);
 		dt = (current_time - last_time).toSec();
+		if (!using_imu) {
+			double vr = imdr/dt;
+			double vl = imdl/dt;
+			ang_vel = (vr-vl)/GIRAFF_DIAMETER;
+			
+			yaw += ang_vel*dt;
+		}
+
 		last_time = current_time;
 		if (!first_time) {
 			double imd = (imdl+imdr)/2;

@@ -277,7 +277,7 @@ class GiraffAVR : public SerialInterface
 	/*------------------------------------------------- setInt32 ---
 	|  Function setInt32
 	|
-	|  Purpose:  This is a wrapper over writeCommand in order to set
+	|  Purpose:  This is a wrapper over writeCommand in ordero to set
 	|            an int32 variable. setInt32(x,value) is translated to
 	|            "set x value\r"
 	|
@@ -288,7 +288,35 @@ class GiraffAVR : public SerialInterface
 	|  Returns:  true if no errors.
 	|            false if some error has occurred
 	*-------------------------------------------------------------------*/		
-	bool setInt32(const std::string& variable, int32_t value); 
+	bool setInt32(const std::string& variable, int32_t value);
+
+
+
+	/*------------------------------------------------ setPIDVelocities ---
+	|   Function setPIDVelocities
+	| 
+	|   Purpose: Set the linear velocity and angular velocity for the new PID
+	|
+	|   Parameters:
+	|       linearVelocity (IN) -- linear velocity in m/s
+	|       angularVelocity (IN) -- angular velocity in rad/s
+	|
+	|   Return: true if no errors
+	|           false if some error has ocurred
+	*----------------------------------------------------------------------*/
+	bool setPIDVelocities(float linearVelocity, float angularVelocity); 
+
+	/*------------------------------------------------ stopPID ---
+	|   Function stopPID
+	| 
+	|   Purpose: Stop the robot motion and reset the PID
+	|
+	|   Parameters:
+	|
+	|   Return: true if no errors
+	|           false if some error has ocurred
+	*----------------------------------------------------------------------*/
+	bool stopPID();
 	
 	/*------------------------------------------------- toFloat ---
 	|  Function toFloat
@@ -772,6 +800,23 @@ inline bool GiraffAVR::writeCommand(const std::string& command, std::string& res
 	monitor.notifyResponse(response.substr(0,response.find_first_of('\r')));
 	return true;
 }
+
+inline bool GiraffAVR::setPIDVelocities(float linearVelocity, float angularVelocity)
+{
+	char buf[64];		
+	sprintf(buf,"teresa-vel %f %f\r",linearVelocity,angularVelocity);
+	std::string command,response;
+	command.assign(buf);
+	return writeCommand(command,response);
+}
+
+inline bool GiraffAVR::stopPID()
+{
+	std::string response;
+	return writeCommand("teresa-pw 0 0\r",response);
+}
+
+
 
 
 inline bool GiraffAVR::writeCommand(const std::string& command, float& response)

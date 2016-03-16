@@ -2,7 +2,7 @@
 /**                                                                    */
 /** giraff_manager.h                                                   */
 /**                                                                    */
-/** Copyright (c) 2015, Service Robotics Lab.                          */ 
+/** Copyright (c) 2015, Service Robotics Lab.                          */
 /**                     http://robotics.upo.es                         */
 /**                                                                    */
 /** All rights reserved.                                               */
@@ -14,7 +14,7 @@
 /** Fernando Caballero                                                 */
 /** Jesus Capitan                                                      */
 /** Luis Merino                                                        */
-/**                                                                    */   
+/**                                                                    */
 /** This software may be modified and distributed under the terms      */
 /** of the BSD license. See the LICENSE file for details.              */
 /**                                                                    */
@@ -41,6 +41,10 @@
 
 // Activate if you want to monitor the actual parameters of the AVR, instead of the sent parameters
 //#define _MONITOR_ACTUAL_AVR_PARAMETERS_
+
+// Activate if you want to use the new PID software in the AVR
+//#define _UPO_PID_
+
 
 #include <iostream>
 #include <string>
@@ -85,12 +89,18 @@ class StopGiraffAction : public Action
 	public:
 	StopGiraffAction(GiraffAVR& giraffAVR) : giraffAVR(giraffAVR) {}
 	virtual ~StopGiraffAction() {}
-	virtual bool doAction() {return giraffAVR.setInt32("mode",0) &&
+	virtual bool doAction()
+	{
+		#ifdef _UPO_PID_
+		return giraffAVR.stopPID();
+		#else
+		return giraffAVR.setInt32("mode",0) &&
 					giraffAVR.setFloat("a",0) &&
 					giraffAVR.setFloat("v",0) && 
 					giraffAVR.setFloat("vg",0) &&
-					giraffAVR.setFloat("p",0); } 
-	
+					giraffAVR.setFloat("p",0); 
+		#endif
+	}
 	private:
 	GiraffAVR& giraffAVR;
 };
@@ -379,7 +389,11 @@ maxLinearVelocity(maxLinearVelocity),
 maxAngularVelocity(maxAngularVelocity),
 timeout(timeout)
 {
+	#ifdef _UPO_PID_
+	state.giraffPC_control=false;
+	#else
 	state.giraffPC_control=true;
+	#endif	
 	state.is_stopped = true;
 	state.mode = 0;
 	state.a = 0;
@@ -396,6 +410,13 @@ timeout(timeout)
 	}
 
 	// Set wheel encoders to 0 and stop robot
+	#ifdef _UPO_PID_
+	if (!giraffAVR.setInt32("enc0",0) ||
+		!giraffAVR.setInt32("enc1",0) ||
+		!giraffAVR.stopPID()) {
+		throw GiraffManagerException(giraffAVR.getLastError());	
+	} 
+	#else
 	if (!giraffAVR.setInt32("enc0",0) ||
 		!giraffAVR.setInt32("enc1",0) ||
 		!giraffAVR.setInt32("mode",0) ||
@@ -405,7 +426,9 @@ timeout(timeout)
 		!giraffAVR.setFloat("vgr",0) ||
 		!giraffAVR.setFloat("p",0)) {
 		throw GiraffManagerException(giraffAVR.getLastError());	
-	} 
+	}
+	#endif 
+
 
 	#ifdef _GIRAFF_MANAGER_DEBUG_
 	_printTime();
@@ -420,12 +443,16 @@ timeout(timeout)
 
 inline GiraffManager::~GiraffManager() {
 	if (giraffAVR.isOpen()) {
+		#ifdef _UPO_PID_
+		giraffAVR.stopPID();
+		#else
 		giraffAVR.setInt32("mode",0);
 		giraffAVR.setFloat("a",0);
 		giraffAVR.setFloat("v",0);
 		giraffAVR.setFloat("vg",0);
 		giraffAVR.setFloat("vgr",0);
 		giraffAVR.setFloat("p",0);
+		#endif
 	}
 }
 
@@ -643,13 +670,14 @@ inline float GiraffManager::decTilt()
 
 inline void GiraffManager::updateState(int32_t mode, float a, float v, float vg, float p)
 {
-	
+	#ifndef _UPO_PID_
 	#ifdef _MONITOR_ACTUAL_AVR_PARAMETERS_
 	giraffAVR.writeCommand("get mode\r",mode);
 	giraffAVR.writeCommand("get a\r",a);
 	giraffAVR.writeCommand("get v\r",v);
 	giraffAVR.writeCommand("get vg\r",vg);
 	giraffAVR.writeCommand("get p\r",p);
+	#endif
 	#endif
 	
 	state.mode = mode;
@@ -658,6 +686,60 @@ inline void GiraffManager::updateState(int32_t mode, float a, float v, float vg,
 	state.vg = vg;
 	state.p = p;
 }
+#ifdef _UPO_PID_
+inline bool GiraffManager::update(std::string& pilot_command, std::string& pilot_response)
+{
+	std::string command;
+	std::string response;	
+	static StopGiraffAction stopGiraffAction(giraffAVR);
+	bool pilot_communication = false;
+
+	#ifdef _OLD_USB_CONNECTIONS_
+	if (!giraffPC.checkDSR(giraffAVR.getWelcomeMessage(),stopGiraffAction)) {
+	#else
+	if (!giraffPC.checkRTS(giraffAVR.getWelcomeMessage(),stopGiraffAction)) {
+	#endif
+		throw GiraffManagerException(giraffPC.getLastError());
+	}
+
+	if (!giraffPC.readCommand(command)) {
+		throw GiraffManagerException(giraffPC.getLastError());
+	}
+	
+	if (command.size()>0) {
+		
+		bool takeControl = command.find("get ")!=0 && 
+		                   command.compare("get\r")!=0 &&
+		                   command.compare("home\r")!=0 &&
+	                       command.find("set tilt_angle_from_home ")!=0 && 
+	                       command.find("set h ")!=0;
+		if (takeControl) {
+			response.assign("OK >\r\n");
+		} else               		
+		#ifdef _FILTER_TILT_FROM_PILOT_
+		if (command.find("set tilt_angle_from_home ")==0) {
+			response.assign("F*00000000\r\nOK >\r\n");
+		} else		
+		#endif
+	  	if (!giraffAVR.writeCommand(command,response)) {
+			throw GiraffManagerException(giraffAVR.getLastError());
+		}
+		
+		if (!giraffPC.writeResponse(response)) {
+			throw GiraffManagerException(giraffPC.getLastError());
+		}
+	
+		pilot_command = command;
+		pilot_response = response;		
+		pilot_communication = true;
+	
+	}
+	
+	return pilot_communication;
+
+}
+
+#else
 
 inline bool GiraffManager::update(std::string& pilot_command, std::string& pilot_response)
 {
@@ -768,11 +850,17 @@ inline bool GiraffManager::update(std::string& pilot_command, std::string& pilot
 	return pilot_communication;
 }
 
+#endif
+
+
 inline GiraffState GiraffManager::setVelocity(float linearVelocity, float angularVelocity)
 {
+
+	#ifndef _UPO_PID_
 	if (state.giraffPC_control) {
 		return state;
 	}
+	#endif
 
 	if (linearVelocity<0.001 && linearVelocity>-0.001) {
 		linearVelocity = 0.0;
@@ -798,14 +886,26 @@ inline GiraffState GiraffManager::setVelocity(float linearVelocity, float angula
 
 
 	if (linearVelocity>-0.001 && linearVelocity<0.001 && angularVelocity>-0.001 && angularVelocity<0.001) {
+		#ifdef _UPO_PID_
+		if (!giraffAVR.setPIDVelocities(0,0)) {
+			throw GiraffManagerException(giraffAVR.getLastError());	
+		}
+		#else
 		if (!giraffAVR.setFloat("v",0) ||
 			!giraffAVR.setFloat("vg",0) ||
 			!giraffAVR.setFloat("p",0)) {
 			throw GiraffManagerException(giraffAVR.getLastError());	
 		}
+		#endif
 		updateState(state.mode,state.a,0,0,0);
 	}
 	else {
+		#ifdef _UPO_PID_
+		if (!giraffAVR.setPIDVelocities(linearVelocity,angularVelocity)) {
+			throw GiraffManagerException(giraffAVR.getLastError());	
+		}
+		updateState(state.mode,state.a,linearVelocity,angularVelocity,0);
+		#else
 		float v,vg,p;
 		if (linearVelocity>=0.001) {
 			v = linearVelocity;
@@ -820,14 +920,14 @@ inline GiraffState GiraffManager::setVelocity(float linearVelocity, float angula
 			p = 1;
 		}
 		vg = angularVelocity*180/PI;
-
-
 		if (!giraffAVR.setFloat("v",v) ||
 			!giraffAVR.setFloat("vg",vg) ||
 			!giraffAVR.setFloat("p",p)) {
 			throw GiraffManagerException(giraffAVR.getLastError());	
 		}
-		updateState(state.mode,state.a,v,vg,p);
+		updateState(state.mode,state.a,v,vg,p);		
+		#endif
+		
 
 	}
 	return state;
