@@ -1,10 +1,12 @@
 # giraff_ros_driver
 ROS Catkin package for the Giraff telepresence platform.
 
-The package is composed by two programs:
+The package is composed by three programs:
 
 * *giraff_driver* is a driver for controlling the Giraff telepresence platform by using ROS.
 * *giraff_teleop_joy* is a program for teleoperating the Giraff telepresence platform with a joystick by using ROS (*optional feature*).
+* *TERESA firmware* is a firmware to be installed in the Giraff microcontroller board (AVR) in order to replace the original PID developed by Giraff with an improved version which is able to manage instant velocities.
+ **This version of the firmware is not currently compatible with the Giraff Pilot software interface**.
 
 The giraff_teleop_joy program is based on the following tutorial: 
 *Writing a Teleoperation Node for a Linux-Supported Joystick* 
@@ -18,27 +20,63 @@ under license http://creativecommons.org/licenses/by/3.0/
 ## General requirements
 
 * Giraff Telepresence platform.
-* Updated version of the Giraff microcontroller firmware.
-  Please ask Giraff (http://www.giraff.org) for the appropriate version for your platform.
-  **If you install an incorrect version, you could damage the platform**
   
-* Computer to be located on the platform running Ubuntu Linux 14.04 and ROS Indigo.
+* Computer to be located on the platform running Ubuntu Linux 14.04 and ROS Indigo. It is possible to use the inner GiraffPC replacing the Operative System (see *Hardware configuration using one PC*), it is also possible to use two PCs: The original inner GiraffPC running the Pilot Software under MS Windows and one extra PC running Ubuntu Linux 14.04 and ROS Indigo. (see *Hardware configuration using two PCs*)
 
-* Serial cables.
+* Two custom FTDI serial cables if you are using two PCs (see *Hardware configuration using two PCs*)
 
-* An Inertial Measurement Unit (IMU) compatible with ROS. The system has been tested with the *Xsens Mti 30* IMU.
+* An Inertial Measurement Unit (IMU) compatible with ROS (*optional*). The system has been tested with the *Xsens Mti 30* IMU. If you are not using an IMU, the odometry of the robot will be calculated by using the wheel encoders.
 
 * A wireless joystick or gamepad with at least 8 buttons and 1 axis compatible with ROS (*optional*). The system has been tested with the *Logitech Wireless F710* gamepad. 
 
 
-## Hardware configuration
+## Hardware configuration using one PC
+
+The original hardware scheme is as follows:
+
+Giraff PC <--- serial cable ---> Giraff microcontroller
+
+The new hardware scheme is the following:
+
+Linux PC <--- serial cable ---> Giraff microcontroller
+
+Please, check the *no_giraff_pc* parameter in the parameters section below.
+
+You can replace the MS Windows Operative System in the Giraff PC by Ubuntu 14.04 and ROS Indigo. 
+
+If you want to use a different motherboard, please, be sure the board includes a serial port socket. 
+
+If you want to use the original serial cable, the link is as follows:
+
+* Rx-----------------Tx
+* Tx-----------------Rx
+* GND----------------GND
+* DTR----------------DSR
+
+If you want to use a custom FTDI cable, the link is as follows:
+
+* Rx-----------------Tx
+* Tx-----------------Rx
+* GND----------------GND
+* RTS----------------DSR
+
+Please, check the *using_ftdi* parameter in the parameters section below.
+
+If you are using an IMU, it should be located on the robot and connected to the Linux PC. Please, check the *using_imu* parameter in the parameters section below.
+
+If you are using a joystick/gamepad, the receiver stick should be connected to the Linux PC.
+
+
+Please, check the *no_giraff_pc* and *using_ftdi* parameters in the parameters section below.
+
+## Hardware configuration using two PCs
 
 The original hardware scheme is as follows:
 
 Giraff PC <--- serial cable ---> Giraff microcontroller
 
 It is needed to remove the serial cable linking the Giraff PC with the Giraff AVR and
-substitute it by two custom cables as explained below. 
+substitute it by two custom FTDI serial cables as explained below. 
 
 The new hardware scheme is the following:
 
@@ -58,19 +96,39 @@ The links for *custom cable2* are:
 * GND----------------GND
 * RTS----------------DSR
  
-The IMU should be located on the robot and connected to the Linux PC.
+If you are using an IMU, it should be located on the robot and connected to the Linux PC. Please, check the *using_imu* parameter in the parameters section below.
 
-The receiver stick of the joystick/gamepad should be connected to the Linux PC.
+If you are using a joystick/gamepad, the receiver stick should be connected to the Linux PC.
+
+Please, check the *no_giraff_pc* and *using_ftdi* parameters in the parameters section below.
+
+## Firware Installation
+
+This package includes a firmware in order to replace the original PID developed by Giraff with an improved version which is able to manage instant velocities. This version of the firmware is not compatible with the Giraff Pilot software. It can be used with the hardware configuration of one or two PCs.
+**If you are going to replace the MS Windows Operative System in the Giraff PC, please, install first the firmware**
+
+In order to install the firmware, follow the next instructions:
+
+* Be sure that the GiraffPC is directly connected to the AVR by the original serial cable included in the platform.
+
+* Do a backup copy of the controller.upl file in the directory *C:/Program Files/cygwin/home/giraffe/telbot/software/avr/controller* in the GiraffPC.
+
+* Replace the previous controller.upl file with the one included in this package.
+
+* Start a cygwin application on the Giraff.
+
+* Type "bin/runterm" to start the terminal application.
+
+* Type "upload" to start the re-programming of the microcontroller.
+
+* When the runterm application restarts, check that the version now is changed to 2.1.213u
 
 
-## Compatibility with the Giraff Pilot software
-
-The original Giraff platform includes a teleoperation software called Pilot to control the robot. 
-
-The driver is compatible with the Pilot software in a transparent fashion.
-
+Please, check the *using_teresa_pid* parameter in the parameters section below.
 
 ## How to command the robot by using ROS
+
+If you are using the original Giraff firmware, the robot can be commanded by using the Giraff Pilot software or by using ROS commands. If you are using the new firmware, the robot can only be commanded by using ROS commands. Please, check the *using_teresa_pid* parameter in the parameters section below.
 
 The Pilot sofware always has priority in order to control the robot, only after a configurable time without receiving motion commands from the Pilot software, the driver begins to accept motion commands from the next ROS topics:
 
@@ -89,11 +147,11 @@ If the value of *head_up* is *true*, the heigth of the head is increased at a co
 
 ## Required ROS topics
 
-The next topic is required in order to run the *giraff_driver* program:
+The next topic is required in order to run the *giraff_driver* program if you are using an IMU:
 
 * **/imu/data** of type **sensor_msgs::Imu** in order to get the information of the IMU.
 
-The next topics is required in order to run the *giraff_teleop_joy* program:
+The next topic is required in order to run the *giraff_teleop_joy* program:
 
 * **/joy** of type **sensor_msgs::Joy** in order get the input of the joystick/gamepad.
 
@@ -140,6 +198,14 @@ Parameters of the *giraff_driver* program:
 
 * **tilt_bias**: Initial angle of the head.
 
+* **using_imu**: Set to *1* if you are using an IMU, set to *0* if you are not using an IMU (the odometry will be calculated by using the wheel encoders).
+
+* **no_giraff_pc**: Set to *1* if you are only using the LinuxPC, set to *0* if you are using both the Linux and the Giraff PC.
+
+* **using_ftdi**: Set to *1* if you are using custom FTDI serial cables, set to *0* if you are using the original serial cable included in the platform in order to connect the LinuxPC to the AVR.
+
+* **using_teresa_pid**: Set to *1* if you have installed the firmware included in this package, set to *0* if you are using the original firmware included in the Giraff platform.
+
 
 
 Parameters of the *giraff_teleop_joy* program:
@@ -173,7 +239,4 @@ Parameters of the *giraff_teleop_joy* program:
 * **max_angular_velocity**: Maximun allowd angular velocity in rad/s.
 
 
-## TODO
 
-- Make optional the connection with the IMU
-- Make optional the connection with the GiraffPC

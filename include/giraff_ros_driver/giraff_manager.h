@@ -42,9 +42,6 @@
 // Activate if you want to monitor the actual parameters of the AVR, instead of the sent parameters
 //#define _MONITOR_ACTUAL_AVR_PARAMETERS_
 
-// Activate if you want to use the new PID software in the AVR
-//#define _UPO_PID_
-
 
 #include <iostream>
 #include <string>
@@ -87,22 +84,23 @@ class GiraffManagerException
 class StopGiraffAction : public Action
 {
 	public:
-	StopGiraffAction(GiraffAVR& giraffAVR) : giraffAVR(giraffAVR) {}
+	StopGiraffAction(GiraffAVR& giraffAVR,bool usingTeresaPID) : giraffAVR(giraffAVR),usingTeresaPID(usingTeresaPID) {}
 	virtual ~StopGiraffAction() {}
 	virtual bool doAction()
 	{
-		#ifdef _UPO_PID_
-		return giraffAVR.stopPID();
-		#else
-		return giraffAVR.setInt32("mode",0) &&
+		if (usingTeresaPID) {
+			return giraffAVR.stopPID();
+		} else {
+			return giraffAVR.setInt32("mode",0) &&
 					giraffAVR.setFloat("a",0) &&
 					giraffAVR.setFloat("v",0) && 
 					giraffAVR.setFloat("vg",0) &&
 					giraffAVR.setFloat("p",0); 
-		#endif
+		}
 	}
 	private:
 	GiraffAVR& giraffAVR;
+	bool usingTeresaPID;
 };
 
 
@@ -154,7 +152,8 @@ class GiraffManager
 	|  
 	*-------------------------------------------------------------------*/
 	GiraffManager(const std::string& giraffAVR_device, const std::string& giraffPC_device,
-		 	float maxLinearVelocity,float maxAngularVelocity,int timeout, GiraffAVRMonitor& monitor = defaultMonitor);
+		 	float maxLinearVelocity,float maxAngularVelocity,int timeout, GiraffAVRMonitor& monitor = defaultMonitor, 
+			bool noGiraffPC = false, bool usingFTDI = true, bool usingTeresaPID = false);
 	/*------------------------------------------------- Destructor -----
 	|  Destructor
 	|
@@ -362,9 +361,17 @@ class GiraffManager
 
 	GiraffState state;
 
+	bool noGiraffPC;
+
+	bool usingTeresaPID;
+
 	void updateState(int32_t mode, float a, float v, float vg, float p);
 
 	int32_t calculateEncoderIncrement(int32_t previous, int32_t current);
+
+	bool update1(std::string& pilot_command, std::string& pilot_response);
+
+	bool update2(std::string& pilot_command, std::string& pilot_response);
 
 };
 
@@ -382,18 +389,29 @@ inline GiraffManager::GiraffManager(const std::string& giraffAVR_device,
 					float maxLinearVelocity,
 					float maxAngularVelocity,
 					int timeout, 
-					GiraffAVRMonitor& monitor) :
-giraffAVR(giraffAVR_device,monitor),
+					GiraffAVRMonitor& monitor,
+					bool noGiraffPC, 
+					bool usingFTDI,
+					bool usingTeresaPID) :
+giraffAVR(giraffAVR_device,monitor,!usingFTDI),
 giraffPC(giraffPC_device),
 maxLinearVelocity(maxLinearVelocity),
 maxAngularVelocity(maxAngularVelocity),
-timeout(timeout)
+timeout(timeout),
+noGiraffPC(noGiraffPC),
+usingTeresaPID(usingTeresaPID)
 {
-	#ifdef _UPO_PID_
-	state.giraffPC_control=false;
-	#else
-	state.giraffPC_control=true;
-	#endif	
+	if (usingTeresaPID) {
+		state.giraffPC_control=false;
+	} else {
+		state.giraffPC_control=true;
+	}
+	
+	if (noGiraffPC) {
+		state.giraffPC_control=false;
+	}
+	
+	
 	state.is_stopped = true;
 	state.mode = 0;
 	state.a = 0;
@@ -410,49 +428,49 @@ timeout(timeout)
 	}
 
 	// Set wheel encoders to 0 and stop robot
-	#ifdef _UPO_PID_
-	if (!giraffAVR.setInt32("enc0",0) ||
-		!giraffAVR.setInt32("enc1",0) ||
-		!giraffAVR.stopPID()) {
-		throw GiraffManagerException(giraffAVR.getLastError());	
-	} 
-	#else
-	if (!giraffAVR.setInt32("enc0",0) ||
-		!giraffAVR.setInt32("enc1",0) ||
-		!giraffAVR.setInt32("mode",0) ||
-		!giraffAVR.setFloat("a",0) ||
-		!giraffAVR.setFloat("v",0) ||
-		!giraffAVR.setFloat("vg",0) ||
-		!giraffAVR.setFloat("vgr",0) ||
-		!giraffAVR.setFloat("p",0)) {
-		throw GiraffManagerException(giraffAVR.getLastError());	
-	}
-	#endif 
-
-
-	#ifdef _GIRAFF_MANAGER_DEBUG_
-	_printTime();
-	std::cout << "Connecting Giraff PC"<<std::endl;
-	#endif
-	if (!giraffPC.open()) {
-		throw GiraffManagerException(giraffPC.getLastError());
+	if (usingTeresaPID) {
+		if (!giraffAVR.setInt32("enc0",0) ||
+			!giraffAVR.setInt32("enc1",0) ||
+			!giraffAVR.stopPID()) {
+			throw GiraffManagerException(giraffAVR.getLastError());	
+		} 
+	} else {
+		if (!giraffAVR.setInt32("enc0",0) ||
+			!giraffAVR.setInt32("enc1",0) ||
+			!giraffAVR.setInt32("mode",0) ||
+			!giraffAVR.setFloat("a",0) ||
+			!giraffAVR.setFloat("v",0) ||
+			!giraffAVR.setFloat("vg",0) ||
+			!giraffAVR.setFloat("vgr",0) ||
+			!giraffAVR.setFloat("p",0)) {
+			throw GiraffManagerException(giraffAVR.getLastError());	
+		}
 	}
 
+	if (!noGiraffPC) {
+		#ifdef _GIRAFF_MANAGER_DEBUG_
+		_printTime();
+		std::cout << "Connecting Giraff PC"<<std::endl;
+		#endif
+		if (!giraffPC.open()) {
+			throw GiraffManagerException(giraffPC.getLastError());
+		}
+	}
 	
 }
 
 inline GiraffManager::~GiraffManager() {
 	if (giraffAVR.isOpen()) {
-		#ifdef _UPO_PID_
-		giraffAVR.stopPID();
-		#else
-		giraffAVR.setInt32("mode",0);
-		giraffAVR.setFloat("a",0);
-		giraffAVR.setFloat("v",0);
-		giraffAVR.setFloat("vg",0);
-		giraffAVR.setFloat("vgr",0);
-		giraffAVR.setFloat("p",0);
-		#endif
+		if (usingTeresaPID) {
+			giraffAVR.stopPID();
+		} else {
+			giraffAVR.setInt32("mode",0);
+			giraffAVR.setFloat("a",0);
+			giraffAVR.setFloat("v",0);
+			giraffAVR.setFloat("vg",0);
+			giraffAVR.setFloat("vgr",0);
+			giraffAVR.setFloat("p",0);
+		}
 	}
 }
 
@@ -617,11 +635,13 @@ inline void GiraffManager::setTilt(float tilt)
 
 inline float GiraffManager::getTilt()
 {
+
 	float tilt;
 	if (!giraffAVR.writeCommand("get tilt_angle_from_home\r",tilt)) {
 		throw GiraffManagerException(giraffAVR.getLastError());
 	}
 	return tilt;
+
 }
 
 
@@ -670,41 +690,55 @@ inline float GiraffManager::decTilt()
 
 inline void GiraffManager::updateState(int32_t mode, float a, float v, float vg, float p)
 {
-	#ifndef _UPO_PID_
 	#ifdef _MONITOR_ACTUAL_AVR_PARAMETERS_
-	giraffAVR.writeCommand("get mode\r",mode);
-	giraffAVR.writeCommand("get a\r",a);
-	giraffAVR.writeCommand("get v\r",v);
-	giraffAVR.writeCommand("get vg\r",vg);
-	giraffAVR.writeCommand("get p\r",p);
+	if (!usingTeresaPID) {
+		giraffAVR.writeCommand("get mode\r",mode);
+		giraffAVR.writeCommand("get a\r",a);
+		giraffAVR.writeCommand("get v\r",v);
+		giraffAVR.writeCommand("get vg\r",vg);
+		giraffAVR.writeCommand("get p\r",p);
+	}
 	#endif
-	#endif
-	
 	state.mode = mode;
 	state.a = a;	
 	state.v = v;
 	state.vg = vg;
 	state.p = p;
 }
-#ifdef _UPO_PID_
+
+
 inline bool GiraffManager::update(std::string& pilot_command, std::string& pilot_response)
 {
+	if (usingTeresaPID) {
+		return update2(pilot_command, pilot_response);
+	} else {
+		return update1(pilot_command, pilot_response);
+	}
+
+
+}
+
+
+
+inline bool GiraffManager::update2(std::string& pilot_command, std::string& pilot_response)
+{
+	if (noGiraffPC) {
+		return false;
+	} 
 	std::string command;
 	std::string response;	
-	static StopGiraffAction stopGiraffAction(giraffAVR);
+	static StopGiraffAction stopGiraffAction(giraffAVR,usingTeresaPID);
 	bool pilot_communication = false;
 
-	#ifdef _OLD_USB_CONNECTIONS_
-	if (!giraffPC.checkDSR(giraffAVR.getWelcomeMessage(),stopGiraffAction)) {
-	#else
+
 	if (!giraffPC.checkRTS(giraffAVR.getWelcomeMessage(),stopGiraffAction)) {
-	#endif
 		throw GiraffManagerException(giraffPC.getLastError());
 	}
 
 	if (!giraffPC.readCommand(command)) {
 		throw GiraffManagerException(giraffPC.getLastError());
 	}
+	
 	
 	if (command.size()>0) {
 		
@@ -734,30 +768,29 @@ inline bool GiraffManager::update(std::string& pilot_command, std::string& pilot
 		pilot_communication = true;
 	
 	}
-	
 	return pilot_communication;
 
 }
 
-#else
 
-inline bool GiraffManager::update(std::string& pilot_command, std::string& pilot_response)
+
+inline bool GiraffManager::update1(std::string& pilot_command, std::string& pilot_response)
 {
+	if (noGiraffPC) {
+		return false;
+	} 
 	static float a_bk=0,v_bk=0,vg_bk=0;
 	static int32_t mode_bk=0;
 	static	time_t giraffPC_time = time(NULL);
-	static StopGiraffAction stopGiraffAction(giraffAVR);
+	static StopGiraffAction stopGiraffAction(giraffAVR,usingTeresaPID);
 			
 	std::string command;
 	std::string response;
 	bool pilot_communication = false;
 	bool giraffPC_initiated0 = giraffPC.isInitiated();
 	
-	#ifdef _OLD_USB_CONNECTIONS_
-	if (!giraffPC.checkDSR(giraffAVR.getWelcomeMessage(),stopGiraffAction)) {
-	#else
+	
 	if (!giraffPC.checkRTS(giraffAVR.getWelcomeMessage(),stopGiraffAction)) {
-	#endif
 		throw GiraffManagerException(giraffPC.getLastError());
 	}
 	
@@ -848,19 +881,20 @@ inline bool GiraffManager::update(std::string& pilot_command, std::string& pilot
 	
 	
 	return pilot_communication;
+
 }
 
-#endif
+
 
 
 inline GiraffState GiraffManager::setVelocity(float linearVelocity, float angularVelocity)
 {
 
-	#ifndef _UPO_PID_
-	if (state.giraffPC_control) {
-		return state;
+	if (!usingTeresaPID) {
+		if (state.giraffPC_control) {
+			return state;
+		}
 	}
-	#endif
 
 	if (linearVelocity<0.001 && linearVelocity>-0.001) {
 		linearVelocity = 0.0;
@@ -886,47 +920,47 @@ inline GiraffState GiraffManager::setVelocity(float linearVelocity, float angula
 
 
 	if (linearVelocity>-0.001 && linearVelocity<0.001 && angularVelocity>-0.001 && angularVelocity<0.001) {
-		#ifdef _UPO_PID_
-		if (!giraffAVR.setPIDVelocities(0,0)) {
-			throw GiraffManagerException(giraffAVR.getLastError());	
+		if (usingTeresaPID) {
+			if (!giraffAVR.setPIDVelocities(0,0)) {
+				throw GiraffManagerException(giraffAVR.getLastError());	
+			}
+		} else {
+			if (!giraffAVR.setFloat("v",0) ||
+				!giraffAVR.setFloat("vg",0) ||
+				!giraffAVR.setFloat("p",0)) {
+				throw GiraffManagerException(giraffAVR.getLastError());	
+			}
 		}
-		#else
-		if (!giraffAVR.setFloat("v",0) ||
-			!giraffAVR.setFloat("vg",0) ||
-			!giraffAVR.setFloat("p",0)) {
-			throw GiraffManagerException(giraffAVR.getLastError());	
-		}
-		#endif
 		updateState(state.mode,state.a,0,0,0);
 	}
 	else {
-		#ifdef _UPO_PID_
-		if (!giraffAVR.setPIDVelocities(linearVelocity,angularVelocity)) {
-			throw GiraffManagerException(giraffAVR.getLastError());	
+		if (usingTeresaPID) {
+			if (!giraffAVR.setPIDVelocities(linearVelocity,angularVelocity)) {
+				throw GiraffManagerException(giraffAVR.getLastError());	
+			}
+			updateState(state.mode,state.a,linearVelocity,angularVelocity,0);
+		} else {
+			float v,vg,p;
+			if (linearVelocity>=0.001) {
+				v = linearVelocity;
+				p = 1;
+			}
+			else if (linearVelocity<=-0.001) {
+				v = -linearVelocity;
+				p = -1;
+			}
+			else {
+				v = 0;
+				p = 1;
+			}
+			vg = angularVelocity*180/PI;
+			if (!giraffAVR.setFloat("v",v) ||
+				!giraffAVR.setFloat("vg",vg) ||
+				!giraffAVR.setFloat("p",p)) {
+				throw GiraffManagerException(giraffAVR.getLastError());	
+			}
+			updateState(state.mode,state.a,v,vg,p);		
 		}
-		updateState(state.mode,state.a,linearVelocity,angularVelocity,0);
-		#else
-		float v,vg,p;
-		if (linearVelocity>=0.001) {
-			v = linearVelocity;
-			p = 1;
-		}
-		else if (linearVelocity<=-0.001) {
-			v = -linearVelocity;
-			p = -1;
-		}
-		else {
-			v = 0;
-			p = 1;
-		}
-		vg = angularVelocity*180/PI;
-		if (!giraffAVR.setFloat("v",v) ||
-			!giraffAVR.setFloat("vg",vg) ||
-			!giraffAVR.setFloat("p",p)) {
-			throw GiraffManagerException(giraffAVR.getLastError());	
-		}
-		updateState(state.mode,state.a,v,vg,p);		
-		#endif
 		
 
 	}

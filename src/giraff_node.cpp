@@ -222,8 +222,20 @@ int main(int argc, char** argv)
 	int timeout;
 	pn.param<int>("giraff_pc_timeout", timeout, GIRAFF_PC_TIMEOUT);
 	
-	bool using_imu;
-	pn.param<bool>("using_imu", using_imu, true);
+	int using_imu;
+	pn.param<int>("using_imu", using_imu, 1);
+
+	int no_giraff_pc_int;
+	pn.param<int>("no_giraff_pc",no_giraff_pc_int,0);
+	bool no_giraff_pc = no_giraff_pc_int==0?false:true;
+
+	int using_ftdi_int;
+	pn.param<int>("using_ftdi",using_ftdi_int,1);
+	bool using_ftdi = using_ftdi_int==1?true:false;
+
+	int using_teresa_pid_int;
+	pn.param<int>("using_teresa_pid",using_teresa_pid_int,0);
+	bool using_teresa_pid = using_teresa_pid_int==0?false:true;
 
 	double freq;
 	pn.param<double>("freq",freq,FREQ);
@@ -234,7 +246,7 @@ int main(int argc, char** argv)
 
 	ros::Publisher avr_comms_pub = pn.advertise<giraff_ros_driver::avr_comms>("/avr_comms",5);
 	GiraffAVRMonitorPublisher monitor(avr_comms_pub);
-	giraff = new GiraffManager(giraff_avr_port,giraff_pc_port,max_lv,max_av,timeout,monitor);
+	giraff = new GiraffManager(giraff_avr_port,giraff_pc_port,max_lv,max_av,timeout,monitor,no_giraff_pc,using_ftdi,using_teresa_pid);
 
 	ros::Publisher odom_pub = pn.advertise<nav_msgs::Odometry>(odom_frame_id, 5);
 	ros::Subscriber cmd_vel_sub = n.subscribe<geometry_msgs::Twist>("/cmd_vel",1,cmdVelReceived);

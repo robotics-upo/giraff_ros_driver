@@ -32,9 +32,6 @@
 // Activate this to show some debug information about the communications Linux PC <--> Giraff PC
 //#define _GIRAFF_PC_DEBUG_
 
-// Activate only if you are using the old USB connections
-//#define _OLD_USB_CONNECTIONS_
-
 #include <sstream>
 #include <string>
 #include <errno.h>
@@ -132,6 +129,7 @@ class SerialInterface
 	
 	protected:
 	bool setRTS(bool rts);
+	bool setDTR(bool dtr);
 	bool getDSR(bool& dsr);	
 	bool getRTS(bool& rts);
 	bool incomingBytes(int& bytes);
@@ -179,7 +177,7 @@ class GiraffAVR : public SerialInterface
 	|     method. 
 	|  
 	*-------------------------------------------------------------------*/
-	GiraffAVR(const std::string& devicename, GiraffAVRMonitor& monitor = defaultMonitor);
+	GiraffAVR(const std::string& devicename, GiraffAVRMonitor& monitor = defaultMonitor, bool using_dtr = false);
 	/*------------------------------------------------- Destructor -----
 	| Destructor
 	*-------------------------------------------------------------------*/
@@ -198,7 +196,8 @@ class GiraffAVR : public SerialInterface
 	|            Rx-----------------Tx
 	|            Tx-----------------Rx
 	|            GND----------------GND
-	|            RTS----------------DSR
+	|            DTR----------------DSR (if _USING_DTR_, i.e, a direct serial cable)
+	|            RTS----------------DSR (if no _USING_DTR_, i.e. a FTDI cable)
 	|
 	|  Parameters:
 	|
@@ -334,6 +333,7 @@ class GiraffAVR : public SerialInterface
 	private:
 	GiraffAVRMonitor& monitor;
 	std::string welcomeMessage;
+	bool using_dtr;
 	static bool getByte(char high, char low, uint8_t& b);
 	bool readResponse(std::string& response, bool takeItEasy=false);
 	virtual void closeNow();
@@ -440,26 +440,7 @@ class GiraffPC : public SerialInterface
 	|            false if some error has occurred
 	*-------------------------------------------------------------------*/			
 	bool checkRTS(const std::string& welcomeMessage, Action& action = defaultAction);
-	/*------------------------------------------------- checkRTS ---
-	|  Function checkDSR (used ifdef _OLD_USB_CONNECTIONS_)
-	|
-	|  Purpose: 
-	|       (1) If the state is "not initiated" and DSR is active, 
-	|           we wait 1 second and send the welcome message,
-	|           the state is now "initiated"
-	|       (2) If the state is "initiated" and DSR is not active, the
-	|           state is now "not initiated"
-	|
-	|  Parameters:
-	|      welcomeMessage (IN) -- The welcomeMessage, as 
-	|                             "# Giraf 1.1.112p, 2011-02-20\r\nOK >\r\n"
-	|                             to be sended in case (1)
-	|      action (IN) -- An action to do in case (1) before waiting 1 second
-	|
-	|  Returns:  true if no errors
-	|            false if some error has occurred
-	*-------------------------------------------------------------------*/			
-	bool checkDSR(const std::string& welcomeMessage, Action& action = defaultAction);
+	
 	/*------------------------------------------------- readCommand ---
 	|  Function readCommand
 	|
@@ -627,6 +608,27 @@ inline bool SerialInterface::setRTS(bool rts)
 }
 
 
+inline bool SerialInterface::setDTR(bool dtr)
+{
+	int status;
+	bool success = (ioctl(fd, TIOCMGET, &status) != -1);	
+	if (success) {
+		if (dtr) {
+			status |= TIOCM_DTR;	
+		}
+		else {
+			status &= ~TIOCM_DTR;
+		}
+		success = (ioctl(fd, TIOCMSET, &status) != -1);
+	}
+	if (!success) {
+		lastError = std::string(strerror(errno));
+	}
+	return success;
+}
+
+
+
 inline bool SerialInterface::getDSR(bool& dsr)
 {
 	int s;
@@ -699,15 +701,20 @@ inline void SerialInterface::closeNow()
 /** GiraffAVR implementation */
 /*****************************/
 
-inline GiraffAVR::GiraffAVR(const std::string& devicename, GiraffAVRMonitor& monitor) :
+inline GiraffAVR::GiraffAVR(const std::string& devicename, GiraffAVRMonitor& monitor, bool using_dtr) :
 SerialInterface(devicename,false),
-monitor(monitor)
+monitor(monitor),
+using_dtr(using_dtr)
 {}
 
 inline GiraffAVR::~GiraffAVR()
 {
 	if (SerialInterface::isOpen()) {
-		SerialInterface::setRTS(false);
+		if (using_dtr) {
+			SerialInterface::setDTR(false);
+		} else {
+			SerialInterface::setRTS(false);
+		}
 	}
 }
 
@@ -719,18 +726,36 @@ inline bool GiraffAVR::open()
 	welcomeMessage="";
 	#ifdef _GIRAFF_AVR_DEBUG_
 	_printTime();
-	std::cout<<"Activating RTS->DSR flag to Giraff AVR"<<std::endl;
-	#endif 
-	if (!SerialInterface::setRTS(false)) {
-		closeNow();
-		return false;
+	if (using_dtr) {
+		std::cout<<"Activating DTR->DSR flag to Giraff AVR"<<std::endl;
+	} else
+		std::cout<<"Activating RTS->DSR flag to Giraff AVR"<<std::endl;
+	} 
+	#endif
+	if (using_dtr) {
+		if (!SerialInterface::setDTR(false)) {
+			closeNow();
+			return false;
+		}
+	} else {
+		if (!SerialInterface::setRTS(false)) {
+			closeNow();
+			return false;
+		}
 	}
 	usleep(5000);
-	
-	if (!SerialInterface::setRTS(true)) {
-		closeNow();
-		return false;
+	if (using_dtr) {
+		if (!SerialInterface::setDTR(true)) {
+			closeNow();
+			return false;
+		}
+	} else {
+		if (!SerialInterface::setRTS(true)) {
+			closeNow();
+			return false;
+		}
 	}
+	
 	#ifdef _GIRAFF_AVR_DEBUG_
 	_printTime();
 	std::cout<<"Waiting for Giraff AVR welcome message"<<std::endl;
@@ -756,14 +781,24 @@ inline bool GiraffAVR::open()
 
 inline void GiraffAVR::closeNow() {
 	welcomeMessage="";
-	SerialInterface::setRTS(false);
+	if (using_dtr) {
+		SerialInterface::setDTR(false);
+	} else {
+		SerialInterface::setRTS(false);
+	}
 	SerialInterface::closeNow();
 }
 
 inline bool GiraffAVR::close()
 {
-	if (!SerialInterface::setRTS(false)) {
-		return false;
+	if (using_dtr) {
+		if (!SerialInterface::setDTR(false)) {
+			return false;
+		}
+	} else {
+		if (!SerialInterface::setRTS(false)) {
+			return false;
+		}
 	}
 	if (!SerialInterface::close()) {
 		return false;	
@@ -984,41 +1019,6 @@ SerialInterface(devicename,false),
 initiated(false)
 {}
 
-
-inline bool GiraffPC::checkDSR(const std::string& welcomeMessage, Action& action)
-{
-	bool dsr;
-	if (!SerialInterface::getDSR(dsr)) {
-		return false;
-	}
-	if (!initiated && dsr) {
-		if (!action.doAction()) {
-			setLastError("Failed initial action in checkDSR");
-			return false;
-		}
-		sleep(1);
-		if (!SerialInterface::write(welcomeMessage)) {
-			return false;
-		}
-		initiated=true;
-		#ifdef _GIRAFF_PC_DEBUG_ 
-			_printTime(); 
-			std::cout << "Giraff PC  -> Linux PC  : DTR up" << std::endl;
-		#endif	
-		#ifdef _GIRAFF_PC_DEBUG_ 
-			_printTime(); 
-			std::cout << "Linux PC   -> Giraff PC : "<< welcomeMessage.substr(0,welcomeMessage.find_first_of('\r')) << std::endl;
-		#endif	
-	}
-	else if (initiated && !dsr) {
-		initiated=false;
-		#ifdef _GIRAFF_PC_DEBUG_ 
-			_printTime(); 
-			std::cout << "Giraff PC  -> Linux PC  : DTR down"<<std::endl;
-		#endif	
-	}
-	return true;
-}
 
 
 inline bool GiraffPC::checkRTS(const std::string& welcomeMessage, Action& action)
