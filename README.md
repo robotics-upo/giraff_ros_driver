@@ -102,7 +102,7 @@ If you are using a joystick/gamepad, the receiver stick should be connected to t
 
 Please, check the *no_giraff_pc* and *using_ftdi* parameters in the parameters section below.
 
-## Firware Installation
+## Firmware Installation
 
 This package includes a firmware in order to replace the original PID developed by Giraff with an improved version which is able to manage instant velocities. This version of the firmware is not compatible with the Giraff Pilot software. It can be used with the hardware configuration of one or two PCs.
 **If you are going to replace the MS Windows Operative System in the Giraff PC, please, install first the firmware**
